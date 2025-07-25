@@ -1,0 +1,281 @@
+---
+title: "Diastolic Blood Pressure Analysis"
+author: "Arefe Asadi"
+date: "2025-07-21"
+output: html_document
+---
+The pressure in the arteries when the heart is relaxed (diastole) is called diastolic pressure, and this is usually less than 90 mmHg in adults. 
+
+In this study Diastolic Blood Pressure (DBP) was measured (mmHg) in the supine position at baseline (i.e., DBP1) before randomization and monthly thereafter up to 4 months as indicated by DBP2, DBP3, DBP4, and DBP5. 
+
+Patients age and sex were recorded at baseline and represent potential covariates. 
+
+Patients were divided in to two groups (Drug and Placebo). Primary objective is to test whether Drug may be effective in lowering DBP as compared to placebo. 
+
+The data set is accessible at:  
+
+
+The following R packages were used for this analysis:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(ez)
+
+```
+
+We begin by importing the dataset and performing basic data checks to understand its structure and verify data integrity.
+
+```{r, include = TRUE}
+# Load the dataset
+data <- read.csv("dbpdata.csv")
+
+# View the first few rows of the dataset
+head(data)
+
+# Check dataset dimensions (rows and columns)
+dim(data)
+
+# Check for any missing values
+any(is.na(data))
+
+```
+
+To improve the interpretability of the age distribution, the continuous age variable was discretized into 6 bins using 5-year intervals. The resulting AgeGroup variable is used to generate a bar plot of participant counts per group.
+
+
+```{r}
+min(data$Age)
+
+max(data$Age)
+
+data$AgeGroup <- cut(
+  data$Age,
+  breaks = c(35, 40, 45, 50, 55, 60, 65),
+  labels = c("35-40", "40-45", "45-50", "50-55","55-60", "60-65"), 
+  right = TRUE
+)
+
+ggplot(data, aes(x = AgeGroup))+
+  geom_bar(width = 1, fill = "mediumpurple1",  color = "black")+
+  labs(title = "Number of Participants by Age Group",
+       x = "Age Group",
+       y = "Number of Participants")+
+  theme_light()
+```
+
+
+The bar plot shows that most participants fall within 45-50 age range, followed by the 40–45 age range.
+
+The following bar plot illustrates the distribution of baseline DBP values. The value of 114 mmHg has the highest frequency, followed by 116 mmHg.
+
+```{r}
+ggplot(data, aes(x = DBP1))+
+  geom_bar(width = 0.5, fill = "lightpink2", color = "black")+
+  scale_x_continuous(breaks = 114:121)+
+  labs(title = "Number of Patients by Baseline DBP",
+       x = "DBP",
+       y = "Number of Patients")+
+  theme_light()
+
+```
+
+The following boxplots illustrates the DBP over time for patients under drug and placebo treatments separately. A reduction in DBP is observed in both groups; however, the decrease in the Drug group appears to be much more pronounced.
+
+```{r}
+df_dbp <- pivot_longer(
+  data,
+  cols = 3:7,
+  names_to = "Time",
+  values_to = "DBP"
+)
+
+ggplot(df_dbp, aes(x = Time, y = DBP, fill = TRT)) +
+  geom_boxplot(position = position_dodge(0.8)) +
+  labs(title = "DBP over Time by Treatment Group",
+       x = "Time Point",
+       y = "Diastolic Blood Pressure",
+       fill = "Treatment") +
+  scale_fill_manual(
+    values = c("A" = "deeppink3", "B" = "aquamarine3"),
+    labels = c("A" = "Drug", "B" = "Placebo")) +
+  theme_light()
+
+```
+
+The table below summarizes the mean diastolic blood pressure (DBP) at each timepoint for both the Drug and Placebo groups. A steady decline in DBP is observed in the Drug group, while the reduction is more gradual in the Placebo group.
+
+```{r}
+TRT_Drug <- data[data$TRT == "A", ]
+TRT_Placebo <- data[data$TRT == "B", ]
+mean_Drug <- apply(TRT_Drug[,3:7], 2, mean)
+mean_Placebo <- apply(TRT_Placebo[,3:7], 2, mean)
+
+df_mean <- data.frame(
+  TimePoint = c("DBP1", "DBP2", "DBP3", "DBP4", "DBP5"),
+  Drug = mean_Drug,
+  Placebo = mean_Placebo
+)
+
+knitr::kable(df_mean, caption = "Mean DBP at Each Timepoint by Treatment Group")
+
+```
+
+Since blood pressure tends to increase with age, any observed difference in DBP between the Drug and Placebo groups could be confounded by age if the groups are not balanced. To assess group comparability before analyzing treatment effects, we test whether the mean age differs between the two groups. This involves performing an independent samples t-test. Prior to this, we check the assumptions of normality within each group and equality of variances between groups. If both assumptions are satisfied, we use the standard t-test; otherwise, we apply Welch’s t-test, which does not assume equal variances.
+
+```{r}
+shapiro.test(data$Age[data$TRT=="A"])
+
+shapiro.test(data$Age[data$TRT=="B"])
+
+```
+
+In both groups, p-value > 0.05. Therefore, normality is satisfied in both groups.
+
+```{r}
+var.test(Age ~ TRT, data = data)
+
+```
+
+Equal variance test shows that p-value > 0.05. Therefore, equal variance assumption is satisfied.
+
+Since the assumptions of normality and equal variances were both satisfied, we performed an independent two-sample t-test assuming equal variances to compare the mean age between the Drug and Placebo groups.
+
+```{r}
+t.test(Age ~ TRT, data = data, var.equal = TRUE)
+
+```
+
+The independent two-sample t-test shows that the mean age do not significantly differ between the two treatment groups, indicating that age is comparable across groups at baseline.
+
+
+Men and women have biologically different cardiovascular profiles. On average, men tend to have higher DBP than women until women reach menopause. Sex hormones, vascular resistance, and cardiac output differ by sex.Hence, sex is associated with the DBP.
+
+The following plot shows the distribution of sex in the Drug and Placebo groups. It can be observed that both sexes are equally represented in each group.
+
+```{r}
+data$Treatment <- factor(data$TRT, levels = c("A", "B"),
+                         labels = c("Drug", "Placebo"))
+ggplot(data, aes(x = Treatment, fill = Sex))+
+  geom_bar(position = "fill", color = "black", 
+           width = 0.5)+
+  coord_flip()+
+  scale_fill_manual(values = c("F" = "orchid1", "M" = "steelblue3"),
+                     labels = c("F" = "Female", "M" = "Male"))+
+  scale_y_continuous(labels = scales::percent)+
+  labs(title = "Proportion of Sex Whithin Treatment Groups",
+       x = "Treatment Group",
+       y = "Proportion of Patients",
+       fill = "Sex")+
+  theme_light()
+
+
+```
+
+To determine whether there is a statistically significant association between sex of patients and Treatment group (Drug vs Placebo) a Chi-squared test of independence is conducted.
+
+```{r}
+chisq.test(table(data$TRT, data$Sex))
+
+```
+
+The test shows that there is no significant association between treatment group and sex, indicating that the distribution of sex was similar across the Drug and Placebo groups.
+
+To evaluate whether the Drug treatment had a statistically significant effect over time within that group, a paired t-test for DBP1 vs DBP5 within each group (e.g., Drug or Placebo group) is performed. To do so first the normality of the differences are verified.
+
+```{r}
+group_drug <- data %>% filter(TRT == "A")
+
+group_placebo <- data %>% filter(TRT == "B")
+
+group_drug$diff <- group_drug$DBP1-group_drug$DBP5
+
+ggplot(group_drug, aes(sample = diff)) + 
+  stat_qq(color = "steelblue", size = 2)+
+  stat_qq_line(color = "darkred", linetype = "dashed")+
+  labs(
+    title = "Q-Q plot for DBP1 - DBP5 differences (Drug Treatment)",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) + 
+  theme_light()
+
+```
+
+The Q-Q plot of the differences in diastolic blood pressure (DBP1 − DBP5) in the Drug group shows that the points closely followed the reference line, indicating that the distribution of the differences is approximately normal.
+
+
+```{r}
+shapiro.test(group_drug$diff)
+
+```
+
+A Shapiro-Wilk test indicated that the differences between baseline and final diastolic blood pressure (DBP1 − DBP5) in the Drug group are approximately normally distributed (W = 0.974, *p* = 0.838), supporting the assumption of normality required for the paired t-test.
+
+```{r}
+t.test(group_drug$DBP1, group_drug$DBP5, paired = TRUE)
+
+```
+
+A paired t-test shows that the mean diastolic blood pressure significantly decreases from baseline (DBP1) to the final time point (DBP5) in the Drug group, with a mean reduction of 15.2 mmHg.
+
+```{r}
+t.test(group_placebo$DBP1, group_placebo$DBP5, paired = TRUE)
+
+```
+
+A paired t-test shows a statistically significant decrease in diastolic blood pressure from baseline (DBP1) to the final measurement (DBP5) in the Placebo group, with a mean reduction of 4.8 mmHg.
+
+Both groups show a significant reduction in diastolic blood pressure from baseline to the final time point; however, the decrease is substantially greater in the Drug group  compared to the Placebo group, suggesting a stronger treatment effect of the drug.
+
+After comparing baseline (DBP1) and final (DBP5) values using a paired t-test, we proceeded to assess whether diastolic blood pressure changed significantly over time across all five timepoints (DBP1–DBP5).
+
+To meet the assumptions of repeated measures ANOVA, we first tested the normality of the within-subject difference scores using the Shapiro–Wilk test.
+
+```{r}
+group_drug$d12 <- group_drug$DBP1-group_drug$DBP2
+
+group_drug$d13 <- group_drug$DBP1-group_drug$DBP3
+
+group_drug$d14 <- group_drug$DBP1-group_drug$DBP4
+
+group_drug$d15 <- group_drug$DBP1-group_drug$DBP5
+
+
+shapiro.test(group_drug$d12)
+
+shapiro.test(group_drug$d13)
+
+shapiro.test(group_drug$d14)
+
+shapiro.test(group_drug$d15)
+
+```
+
+Normality of difference scores was tested using Shapiro-Wilk test. All comparisons were normal except DBP1–DBP3 (p = 0.0028), which showed slight deviation.
+
+Upon confirming approximate normality, we conducted a repeated measures ANOVA using the ezANOVA() function.
+
+```{r}
+df_dbp$Subject <- as.factor(df_dbp$Subject)
+
+df_dbp$Time <- as.factor(df_dbp$Time)
+
+
+anova_results <- ezANOVA(
+  data = df_dbp,
+  dv = DBP, # dependent variable
+  wid = Subject, # Within ID subject
+  within = Time, # Repeated Measure Factor
+  detailed = TRUE
+)
+
+
+print(anova_results)
+
+```
+
+The effect of time is statistically significant (F(4, 156) = 79.80, p < 2e-16), indicating that DBP changed significantly over time.
+
+In summary, both the paired t-tests and repeated measures ANOVA demonstrate a significant reduction in diastolic blood pressure over time in both treatment groups, with a markedly stronger effect observed in the Drug group. These findings suggest that the drug may be effective in lowering DBP more substantially than placebo. Further investigation with a larger sample and additional covariates may help confirm and extend these results.
